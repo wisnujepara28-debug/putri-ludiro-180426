@@ -125,8 +125,8 @@ setInterval(() => {
 }, 60 * 1000);
 
 const app = express();
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ limit: '100mb', extended: true }));
+app.use(express.json({ limit: '1000mb' }));
+app.use(express.urlencoded({ limit: '1000mb', extended: true }));
 
 const server = http.createServer(app);
 
@@ -230,6 +230,28 @@ app.get('/api/stats', (_req, res) => {
 
 app.get('/api/presence', (_req, res) => {
   res.json(getOnlineUsers());
+});
+
+app.get('/api/media/:id/file', (req, res) => {
+  const { id } = req.params;
+  const item = state.media.find((m) => m.id === id);
+  if (!item || !item.dataUrl) {
+    return res.status(404).send('File not found');
+  }
+
+  if (typeof item.dataUrl === 'string' && item.dataUrl.startsWith('data:')) {
+    const matches = item.dataUrl.match(/^data:(.+);base64,(.+)$/);
+    if (matches) {
+      const mimeType = matches[1];
+      const buffer = Buffer.from(matches[2], 'base64');
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Length', buffer.length);
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return res.send(buffer);
+    }
+  }
+
+  res.redirect(item.dataUrl);
 });
 
 app.get('/api/media', (_req, res) => {

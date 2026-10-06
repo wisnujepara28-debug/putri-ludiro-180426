@@ -139,7 +139,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({
             <div className="grid grid-cols-3 gap-2 pt-1 text-center">
               <div className="p-2 rounded-lg bg-zinc-900 border border-zinc-850">
                 <span className="text-[10px] text-zinc-500 block uppercase font-medium">Total Kapasitas</span>
-                <span className="text-xs font-bold text-zinc-200 font-mono">4.0 TB</span>
+                <span className="text-xs font-bold text-zinc-200 font-mono">1000 TB</span>
               </div>
               <div className="p-2 rounded-lg bg-zinc-900 border border-zinc-850">
                 <span className="text-[10px] text-zinc-500 block uppercase font-medium">Ruang Terpakai</span>
@@ -155,11 +155,11 @@ export const BackupModal: React.FC<BackupModalProps> = ({
             <div className="p-3 rounded-lg bg-zinc-900/60 border border-zinc-850 text-xs text-zinc-300 space-y-1.5">
               <div className="flex items-center gap-2 font-medium text-amber-300">
                 <Zap className="w-3.5 h-3.5" />
-                <span>Daya Tampung Penyimpanan 4 Terabytes:</span>
+                <span>Daya Tampung Penyimpanan 1000 Terabytes:</span>
               </div>
               <ul className="text-[11px] text-zinc-400 space-y-1 pl-5 list-disc">
-                <li>Dapat menampung hingga <strong>~1.200.000 foto</strong> beresolusi tinggi</li>
-                <li>Dapat menampung hingga <strong>~800 jam video</strong> kualitas 4K/Full HD</li>
+                <li>Dapat menampung hingga <strong>~300.000.000 foto</strong> beresolusi tinggi</li>
+                <li>Dapat menampung hingga <strong>~200.000 jam video</strong> kualitas 4K/Full HD</li>
                 <li>Tersinkronisasi secara online dan dapat diakses dari perangkat mana saja</li>
               </ul>
             </div>
@@ -172,7 +172,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({
               Cadangkan Semua Berkas (.ZIP)
             </h4>
             <p className="text-xs text-zinc-400 leading-relaxed">
-              Unduh salinan cadangan lengkap seluruh {mediaItems.length} berkas yang ada di Cloud 4TB ke dalam 1 arsip ZIP langsung ke komputer/ponsel Anda.
+              Unduh salinan cadangan lengkap seluruh {mediaItems.length} berkas yang ada di Cloud 1000 TB ke dalam 1 arsip ZIP langsung ke komputer/ponsel Anda.
             </p>
 
             {isExporting && (
@@ -214,7 +214,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({
               Impor / Masukkan Berkas Tambahan
             </h4>
             <p className="text-xs text-zinc-400 leading-relaxed">
-              Tambahkan kumpulan berkas foto atau video dari perangkat Anda ke Cloud 4TB secara langsung.
+              Tambahkan kumpulan berkas foto atau video dari perangkat Anda ke Cloud 1000 TB secara langsung.
             </p>
 
             <label className="w-full py-2 px-4 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-medium text-zinc-300 hover:text-white flex items-center justify-center gap-2 cursor-pointer transition-colors">

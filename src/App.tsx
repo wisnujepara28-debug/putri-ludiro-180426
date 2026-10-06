@@ -787,6 +787,7 @@ export default function App() {
         onClose={() => setIsBackgroundModalOpen(false)}
         config={customWallpaper}
         onChangeConfig={handleUpdateWallpaper}
+        mediaList={mediaList}
       />
     </div>
   );

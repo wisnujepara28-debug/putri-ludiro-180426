@@ -43,27 +43,10 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
   if (!isOpen) return null;
 
-  const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50MB limit per file
-
   const validateAndAddFiles = (files: File[]) => {
     setValidationError(null);
-    const validFiles: File[] = [];
-    let oversizedCount = 0;
-
-    for (const f of files) {
-      if (f.size > MAX_FILE_SIZE_BYTES) {
-        oversizedCount++;
-      } else {
-        validFiles.push(f);
-      }
-    }
-
-    if (oversizedCount > 0) {
-      setValidationError(`${oversizedCount} berkas melebihi batas 50MB per file dan dilewati.`);
-    }
-
-    if (validFiles.length > 0) {
-      setSelectedFiles((prev) => [...prev, ...validFiles]);
+    if (files.length > 0) {
+      setSelectedFiles((prev) => [...prev, ...files]);
     }
   };
 
@@ -203,8 +186,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                 <p className="text-sm font-semibold text-zinc-200">
                   Tarik dan lepas berkas foto, video, atau dokumen ke sini
                 </p>
-                <p className="text-xs text-zinc-500 mt-1">
-                  Kapasitas 4.0 TB super luas untuk semua berkas Anda
+                <p className="text-xs text-amber-400 font-medium mt-1">
+                  Penyimpanan 1000 TB Super Luas · Bebas tanpa batasan ukuran file
                 </p>
               </div>
 
@@ -223,7 +206,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
           <div className="flex justify-between items-center text-xs text-zinc-400">
             <span className="flex items-center gap-1.5 text-zinc-400">
               <HardDrive className="w-3.5 h-3.5 text-amber-400" />
-              <span>Penyimpanan Cloud 4.0 TB (4.096 GB) Aktif</span>
+              <span>Penyimpanan Cloud 1000 TB Realtime Firestore Active</span>
             </span>
 
             <button
@@ -318,7 +301,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
           {isProcessing && (
             <div className="space-y-1.5 pt-2">
               <div className="flex justify-between text-xs text-zinc-400">
-                <span>Mengunggah dan menyinkronkan ke Cloud 4TB...</span>
+                <span>Mengunggah dan menyinkronkan ke Cloud 1000 TB Realtime...</span>
                 <span className="font-mono">{progressPercent}%</span>
               </div>
               <div className="w-full h-2 rounded-full bg-zinc-800 overflow-hidden">

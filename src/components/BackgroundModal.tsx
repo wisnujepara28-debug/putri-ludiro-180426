@@ -12,6 +12,7 @@ import {
   Palette
 } from 'lucide-react';
 import { fileToDataUrl } from '../services/storage';
+import { MediaItem } from '../types/media';
 
 export interface CustomWallpaperConfig {
   imageUrl: string | null;
@@ -24,6 +25,7 @@ interface BackgroundModalProps {
   onClose: () => void;
   config: CustomWallpaperConfig;
   onChangeConfig: (newConfig: CustomWallpaperConfig) => void;
+  mediaList?: MediaItem[];
 }
 
 export const BackgroundModal: React.FC<BackgroundModalProps> = ({
@@ -31,6 +33,7 @@ export const BackgroundModal: React.FC<BackgroundModalProps> = ({
   onClose,
   config,
   onChangeConfig,
+  mediaList = [],
 }) => {
   const [currentUrl, setCurrentUrl] = useState<string | null>(config.imageUrl);
   const [opacity, setOpacity] = useState<number>(config.opacity ?? 0.4);
@@ -177,9 +180,44 @@ export const BackgroundModal: React.FC<BackgroundModalProps> = ({
               className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-zinc-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-950/30 active:scale-95 transition-all cursor-pointer"
             >
               <Upload className="w-4 h-4 stroke-[2.5]" />
-              <span>{isProcessing ? 'Memproses Foto...' : 'Pilih Foto dari Perangkat Anda'}</span>
+              <span>{isProcessing ? 'Memproses Foto...' : 'Unggah Foto Baru dari HP/Laptop'}</span>
             </button>
           </div>
+
+          {/* Quick Picker from PUTREK Gallery */}
+          {mediaList.filter((m) => m.type === 'image' && !m.isTrash).length > 0 && (
+            <div className="space-y-2 pt-1">
+              <label className="block text-xs font-semibold text-zinc-300">
+                Pilih dari Galeri Foto PUTREK
+              </label>
+              <div className="grid grid-cols-4 gap-2 max-h-36 overflow-y-auto p-1 bg-zinc-950 rounded-xl border border-zinc-800">
+                {mediaList
+                  .filter((m) => m.type === 'image' && !m.isTrash)
+                  .slice(0, 12)
+                  .map((img) => (
+                    <button
+                      key={img.id}
+                      type="button"
+                      onClick={() => {
+                        setCurrentUrl(img.dataUrl);
+                        onChangeConfig({
+                          imageUrl: img.dataUrl,
+                          opacity,
+                          blur,
+                        });
+                      }}
+                      className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
+                        currentUrl === img.dataUrl
+                          ? 'border-amber-500 scale-95 ring-2 ring-amber-500/50'
+                          : 'border-zinc-800 hover:border-zinc-500 opacity-70 hover:opacity-100'
+                      }`}
+                    >
+                      <img src={img.dataUrl} alt={img.name} className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+              </div>
+            </div>
+          )}
 
           {/* Background Adjustments (Sliders) */}
           {currentUrl && (

@@ -256,12 +256,71 @@ export function connectWebSocket(user: MediaAuthor) {
   updateUserPresence(user);
 }
 
-// Media API via Firestore
+// Helper: Optimize large Base64 data URLs to stay within Firestore 1MB document limit
+export async function optimizeDataUrlForFirestore(item: MediaItem): Promise<string> {
+  const dataUrl = item.dataUrl;
+  if (!dataUrl || dataUrl.length < 500000) return dataUrl; // Under ~500KB is safe for direct Firestore doc
+
+  // If it's not an image (e.g. Video, Audio, ZIP, PDF, Document), use server media endpoint link
+  if (!dataUrl.startsWith('data:image')) {
+    return `/api/media/${item.id}/file`;
+  }
+
+  // For images, attempt lightweight canvas compression first
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+      const maxDim = 900;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressed = canvas.toDataURL('image/jpeg', 0.65);
+        if (compressed.length < 500000) {
+          resolve(compressed);
+          return;
+        }
+      }
+      resolve(`/api/media/${item.id}/file`);
+    };
+    img.onerror = () => resolve(`/api/media/${item.id}/file`);
+    img.src = dataUrl;
+  });
+}
+
+// Media API via Firestore + Express Hybrid Sync
 export async function getAllMedia(): Promise<MediaItem[]> {
   try {
     const snapshot = await getDocs(collection(db, 'media'));
     const items: MediaItem[] = [];
     snapshot.forEach((docSnap) => items.push(docSnap.data() as MediaItem));
+    
+    // Also fetch from server API if needed
+    try {
+      const res = await fetch('/api/media');
+      if (res.ok) {
+        const apiItems: MediaItem[] = await res.json();
+        const map = new Map<string, MediaItem>();
+        for (const item of apiItems) map.set(item.id, item);
+        for (const item of items) map.set(item.id, item);
+        return Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      }
+    } catch {}
+
     return items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'media');
@@ -271,17 +330,35 @@ export async function getAllMedia(): Promise<MediaItem[]> {
 
 export async function saveMediaBatch(items: MediaItem[]): Promise<void> {
   const currentUser = getCurrentUser();
-  for (const item of items) {
-    const docItem: MediaItem = {
-      ...item,
-      author: item.author || currentUser,
-      likes: item.likes || [],
-      comments: item.comments || [],
-    };
+  const itemsWithAuthor = items.map((item) => ({
+    ...item,
+    author: item.author || currentUser,
+    likes: item.likes || [],
+    comments: item.comments || [],
+  }));
+
+  // 1. Sync to Express API
+  try {
+    await fetch('/api/media', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(itemsWithAuthor),
+    });
+  } catch (err) {
+    console.warn('Express saveMediaBatch warning:', err);
+  }
+
+  // 2. Sync to Firestore Realtime DB
+  for (const item of itemsWithAuthor) {
     try {
+      const optimizedDataUrl = await optimizeDataUrlForFirestore(item);
+      const docItem: MediaItem = {
+        ...item,
+        dataUrl: optimizedDataUrl,
+      };
       await setDoc(doc(db, 'media', docItem.id), docItem);
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `media/${docItem.id}`);
+      console.warn('Firestore setDoc warning for item:', item.id, error);
     }
   }
 }
