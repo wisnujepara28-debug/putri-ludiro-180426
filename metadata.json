@@ -1,0 +1,6 @@
+{
+  "name": "PUTREK",
+  "description": "Aplikasi modern dan mudah untuk menyimpan, mengelola, mengedit, dan mencadangkan foto serta video secara aman dan cepat di Cloud 1000 TB.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
