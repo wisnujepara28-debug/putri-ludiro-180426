@@ -482,6 +482,18 @@ export default function App() {
   };
 
   // Save new media
+  const handleDirectUploadPhotos = async (files: File[]) => {
+    showToast(`Mengunggah ${files.length} foto ke Cloud 1000 TB...`);
+    const newItems: MediaItem[] = [];
+    for (const file of files) {
+      const item = await processFileToMedia(file);
+      newItems.push(item);
+    }
+    if (newItems.length > 0) {
+      await handleSaveBatchMedia(newItems);
+    }
+  };
+
   const handleSaveBatchMedia = async (items: MediaItem[]) => {
     setMediaList((prev) => [...items, ...prev]);
     await saveMediaBatch(items);
@@ -616,7 +628,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Navbar with 4TB Cloud Indicator & Online Presence */}
+        {/* Navbar with 1000TB Cloud Indicator & Online Presence */}
         <Navbar
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
@@ -624,6 +636,7 @@ export default function App() {
           onOpenCamera={() => setIsCameraModalOpen(true)}
           onOpenBackup={() => setIsBackupModalOpen(true)}
           onOpenBackground={() => setIsBackgroundModalOpen(true)}
+          onDirectUploadPhotos={handleDirectUploadPhotos}
           totalPhotos={counts.totalPhotos}
           totalVideos={counts.totalVideos}
           usedBytes={stats.usedBytes}

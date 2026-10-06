@@ -4,6 +4,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,10 +16,29 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000; // 30 Days in Milliseconds
 
 const DATA_DIR = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'cloud_storage.json');
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+// Multer Disk Storage Configuration for Unlimited Uploads
+const storageEngine = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
+  filename: (_req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname) || '';
+    cb(null, `${uniqueSuffix}${ext}`);
+  },
+});
+
+const uploadMiddleware = multer({
+  storage: storageEngine,
+  limits: { fileSize: 20 * 1024 * 1024 * 1024 }, // 20 GB limit per file for photos and videos
+});
 
 interface ServerState {
   media: any[];
@@ -230,6 +250,30 @@ app.get('/api/stats', (_req, res) => {
 
 app.get('/api/presence', (_req, res) => {
   res.json(getOnlineUsers());
+});
+
+// Multipart Upload Route for Unlimited Photo & Video Uploads
+app.post('/api/upload-file', uploadMiddleware.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+  const fileUrl = `/api/files/${req.file.filename}`;
+  res.json({
+    filename: req.file.filename,
+    originalName: req.file.originalname,
+    mimeType: req.file.mimetype,
+    size: req.file.size,
+    url: fileUrl,
+  });
+});
+
+// Direct Binary File Serve Route
+app.get('/api/files/:filename', (req, res) => {
+  const filePath = path.join(UPLOADS_DIR, req.params.filename);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).send('File not found');
+  }
+  res.sendFile(filePath);
 });
 
 app.get('/api/media/:id/file', (req, res) => {

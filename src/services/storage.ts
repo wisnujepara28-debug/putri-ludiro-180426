@@ -572,12 +572,39 @@ export function detectMediaType(fileName: string, mimeType: string): MediaType {
   return 'file';
 }
 
+export async function uploadFileBinary(file: File): Promise<string> {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch('/api/upload-file', {
+      method: 'POST',
+      body: formData,
+    });
+    if (response.ok) {
+      const resJson = await response.json();
+      if (resJson && resJson.url) {
+        return resJson.url;
+      }
+    }
+  } catch (err) {
+    console.warn('Binary upload endpoint warning, falling back to client URL:', err);
+  }
+  return fileToDataUrl(file);
+}
+
 export async function processFileToMedia(file: File, albumId = 'none'): Promise<MediaItem> {
   const ext = file.name.split('.').pop()?.toUpperCase() || 'FILE';
   const type = detectMediaType(file.name, file.type);
-  const dataUrl = await fileToDataUrl(file);
   const author = getCurrentUser();
   const id = 'media_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+
+  // For photos and videos or large files, upload binary directly to server
+  let dataUrl = '';
+  if (file.size > 2 * 1024 * 1024 || type === 'video' || type === 'image') {
+    dataUrl = await uploadFileBinary(file);
+  } else {
+    dataUrl = await fileToDataUrl(file);
+  }
 
   let textContent: string | undefined = undefined;
   if (type === 'document' && file.size < 2 * 1024 * 1024) {

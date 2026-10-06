@@ -12,7 +12,8 @@ import {
   UserCheck,
   Edit3,
   Check,
-  Palette
+  Palette,
+  Image as ImageIcon
 } from 'lucide-react';
 import { OnlineUser, MediaAuthor, FOUR_TERABYTES_BYTES } from '../types/media';
 import { formatBytes, saveCurrentUser, signInWithGoogle, logoutUser } from '../services/storage';
@@ -24,6 +25,7 @@ interface NavbarProps {
   onOpenCamera: () => void;
   onOpenBackup: () => void;
   onOpenBackground: () => void;
+  onDirectUploadPhotos?: (files: File[]) => void;
   totalPhotos: number;
   totalVideos: number;
   usedBytes: number;
@@ -42,6 +44,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenCamera,
   onOpenBackup,
   onOpenBackground,
+  onDirectUploadPhotos,
   totalPhotos,
   totalVideos,
   usedBytes,
@@ -53,6 +56,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [editName, setEditName] = useState(currentUser.name);
   const [editAvatar, setEditAvatar] = useState(currentUser.avatar);
+  const photoInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
@@ -178,6 +182,29 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className="hidden md:inline">Cadangan</span>
         </button>
 
+        <input
+          ref={photoInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files && e.target.files.length > 0 && onDirectUploadPhotos) {
+              onDirectUploadPhotos(Array.from(e.target.files));
+              e.target.value = '';
+            }
+          }}
+        />
+
+        <button
+          onClick={() => photoInputRef.current?.click()}
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-xs font-semibold text-emerald-300 transition-all cursor-pointer"
+          title="Pilih dan unggah foto langsung dari galeri HP atau komputer Anda"
+        >
+          <ImageIcon className="w-4 h-4 text-emerald-400 stroke-[2.2]" />
+          <span className="hidden sm:inline font-bold">Unggah Foto</span>
+        </button>
+
         <button
           onClick={onOpenCamera}
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-medium text-zinc-200 transition-colors"
@@ -190,7 +217,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <button
           onClick={onOpenUpload}
           className="inline-flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-zinc-950 text-xs font-semibold shadow-md shadow-amber-950/30 transition-all active:scale-95 whitespace-nowrap"
-          title="Unggah foto atau video ke Cloud 4TB"
+          title="Unggah foto atau video ke Cloud 1000 TB"
         >
           <Upload className="w-4 h-4 text-zinc-950 stroke-[2.5]" />
           <span>Unggah Cloud</span>
