@@ -39,12 +39,37 @@ export const UploadModal: React.FC<UploadModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
+  const [validationError, setValidationError] = useState<string | null>(null);
+
   if (!isOpen) return null;
+
+  const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50MB limit per file
+
+  const validateAndAddFiles = (files: File[]) => {
+    setValidationError(null);
+    const validFiles: File[] = [];
+    let oversizedCount = 0;
+
+    for (const f of files) {
+      if (f.size > MAX_FILE_SIZE_BYTES) {
+        oversizedCount++;
+      } else {
+        validFiles.push(f);
+      }
+    }
+
+    if (oversizedCount > 0) {
+      setValidationError(`${oversizedCount} berkas melebihi batas 50MB per file dan dilewati.`);
+    }
+
+    if (validFiles.length > 0) {
+      setSelectedFiles((prev) => [...prev, ...validFiles]);
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const newFiles = Array.from(e.target.files);
-      setSelectedFiles((prev) => [...prev, ...newFiles]);
+      validateAndAddFiles(Array.from(e.target.files));
     }
   };
 
@@ -52,8 +77,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     e.preventDefault();
     setIsDragOver(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const droppedFiles = Array.from(e.dataTransfer.files);
-      setSelectedFiles((prev) => [...prev, ...droppedFiles]);
+      validateAndAddFiles(Array.from(e.dataTransfer.files));
     }
   };
 
@@ -125,6 +149,19 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
         {/* Content Body */}
         <div className="p-6 overflow-y-auto space-y-5">
+          {validationError && (
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-medium flex items-center justify-between">
+              <span>{validationError}</span>
+              <button
+                type="button"
+                onClick={() => setValidationError(null)}
+                className="text-amber-400 hover:text-amber-200 ml-2"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           {/* Dropzone Area */}
           <div
             onDragOver={(e) => {

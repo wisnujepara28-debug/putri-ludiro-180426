@@ -111,9 +111,9 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Live Cloud Unboxed Metadata with Typographic Separator */}
         <div className="hidden xl:flex items-center gap-2 text-xs text-zinc-400 whitespace-nowrap shrink-0">
-          <span className="flex items-center gap-1 text-emerald-400 font-medium">
+          <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[11px]">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>{onlineUsers.length || 1} Online</span>
+            <span>Firestore Realtime · {onlineUsers.length || 1} Online</span>
           </span>
           <span aria-hidden="true" className="text-zinc-600">·</span>
           <span className="text-zinc-300 font-medium">{totalPhotos} Foto</span>

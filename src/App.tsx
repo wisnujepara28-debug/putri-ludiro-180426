@@ -525,10 +525,12 @@ export default function App() {
   };
 
   const handleDeleteAlbum = async (albumId: string) => {
+    const targetAlbum = albums.find((a) => a.id === albumId);
+    const albumName = targetAlbum?.name || 'Album';
     setAlbums((prev) => prev.filter((a) => a.id !== albumId));
     if (selectedAlbumId === albumId) setSelectedAlbumId(null);
     await deleteAlbumStorage(albumId);
-    showToast('Album berhasil dihapus');
+    showToast(`Album "${albumName}" telah dihapus`);
   };
 
   const handleSeedData = async () => {
