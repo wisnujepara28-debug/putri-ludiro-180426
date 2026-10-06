@@ -1,0 +1,75 @@
+{
+  "entities": {
+    "MediaItem": {
+      "title": "Media Item",
+      "description": "A uploaded photo, video, audio, or document in PUTREK Cloud 1000 TB",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 256 },
+        "type": { "type": "string", "maxLength": 32 },
+        "mimeType": { "type": "string", "maxLength": 128 },
+        "size": { "type": "number" },
+        "dataUrl": { "type": "string", "maxLength": 15000000 },
+        "textContent": { "type": "string", "maxLength": 2000000 },
+        "fileExtension": { "type": "string", "maxLength": 32 },
+        "albumId": { "type": "string", "maxLength": 128 },
+        "tags": { "type": "array" },
+        "isFavorite": { "type": "boolean" },
+        "isTrash": { "type": "boolean" },
+        "trashedAt": { "type": "number" },
+        "isVault": { "type": "boolean" },
+        "caption": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "number" },
+        "rotation": { "type": "number" },
+        "filter": { "type": "string", "maxLength": 32 },
+        "author": { "type": "object" },
+        "likes": { "type": "array" },
+        "comments": { "type": "array" }
+      },
+      "required": ["id", "name", "type", "mimeType", "size", "dataUrl", "albumId", "createdAt"]
+    },
+    "Album": {
+      "title": "Album",
+      "description": "A media folder album in PUTREK Cloud 1000 TB",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 128 },
+        "description": { "type": "string", "maxLength": 500 },
+        "color": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "number" },
+        "createdBy": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["id", "name", "createdAt"]
+    },
+    "UserPresence": {
+      "title": "User Presence",
+      "description": "Online user active state and profile",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 128 },
+        "avatar": { "type": "string", "maxLength": 64 },
+        "color": { "type": "string", "maxLength": 32 },
+        "lastActive": { "type": "number" },
+        "device": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "name", "lastActive"]
+    }
+  },
+  "firestore": {
+    "/media/{mediaId}": {
+      "schema": { "$ref": "#/entities/MediaItem" },
+      "description": "Collection of all media items shared across logged-in users"
+    },
+    "/albums/{albumId}": {
+      "schema": { "$ref": "#/entities/Album" },
+      "description": "Collection of shared albums"
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserPresence" },
+      "description": "Presence tracking for online active users"
+    }
+  }
+}

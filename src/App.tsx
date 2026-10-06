@@ -25,7 +25,9 @@ import {
   toggleLikeMedia,
   addCommentMedia,
   calculateStorageStats,
-  formatBytes
+  formatBytes,
+  subscribeToAuth,
+  updateUserPresence
 } from './services/storage';
 import { MediaItem, Album, ViewFilter, SortOption, ViewMode, OnlineUser, MediaAuthor, FOUR_TERABYTES_BYTES } from './types/media';
 import { Navbar } from './components/Navbar';
@@ -117,10 +119,25 @@ export default function App() {
     }
   }, []);
 
-  // Connect WebSocket & subscribe to real-time events
+  // Subscribe to Firebase Auth changes
   useEffect(() => {
-    connectWebSocket(currentUser);
+    const unsubAuth = subscribeToAuth((fbUser) => {
+      if (fbUser) {
+        const userAuthor: MediaAuthor = {
+          id: fbUser.uid,
+          name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Pengguna PUTREK',
+          avatar: '⭐',
+          color: '#10b981',
+        };
+        setCurrentUser(userAuthor);
+        updateUserPresence(userAuthor);
+      }
+    });
+    return () => unsubAuth();
+  }, []);
 
+  // Subscribe to Firestore Realtime Data & Presence Sync
+  useEffect(() => {
     const unsubscribe = subscribeToCloudSync((event) => {
       if (event.type === 'init') {
         if (event.media) setMediaList(event.media);

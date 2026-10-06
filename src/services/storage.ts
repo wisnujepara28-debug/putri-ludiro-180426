@@ -1,5 +1,40 @@
-import { MediaItem, MediaType, Album, OnlineUser, MediaAuthor, FOUR_TERABYTES_BYTES, THIRTY_DAYS_MS } from '../types/media';
+import { 
+  MediaItem, 
+  MediaType, 
+  Album, 
+  OnlineUser, 
+  MediaAuthor, 
+  FOUR_TERABYTES_BYTES, 
+  THIRTY_DAYS_MS 
+} from '../types/media';
 import JSZip from 'jszip';
+import { 
+  db, 
+  auth, 
+  googleProvider, 
+  handleFirestoreError, 
+  OperationType 
+} from './firebase';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  getDocs, 
+  onSnapshot, 
+  query, 
+  orderBy,
+  writeBatch,
+  getDoc,
+  serverTimestamp
+} from 'firebase/firestore';
+import { 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged, 
+  User 
+} from 'firebase/auth';
 
 // Initial default sample assets
 import putrekCoupleBg from '../assets/images/exact_couple_bg_1791264638859.jpg';
@@ -11,11 +46,38 @@ import sampleKucing from '../assets/images/sample_kucing_lucu_1791253034468.jpg'
 export { putrekCoupleBg };
 
 const USER_KEY = 'simpanmedia_user_profile';
-
 const AVATAR_PRESETS = ['🦊', '🐯', '🐼', '🦁', '🚀', '⭐', '🎨', '📸', '💎', '🌊'];
 const COLOR_PRESETS = ['#f59e0b', '#10b981', '#0ea5e9', '#8b5cf6', '#ec4899', '#f43f5e', '#eab308'];
 
+// Realtime User Authentication & Sync
+export function formatBytes(bytes: number, decimals = 1): string {
+  if (!bytes || bytes <= 0) return '0 B';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+export function downloadSingleItem(item: MediaItem) {
+  const a = document.createElement('a');
+  a.href = item.dataUrl;
+  a.download = item.name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 export function getCurrentUser(): MediaAuthor {
+  if (auth.currentUser) {
+    return {
+      id: auth.currentUser.uid,
+      name: auth.currentUser.displayName || auth.currentUser.email?.split('@')[0] || 'User PUTREK',
+      avatar: '👑',
+      color: '#f59e0b',
+    };
+  }
+
   try {
     const saved = localStorage.getItem(USER_KEY);
     if (saved) return JSON.parse(saved);
@@ -36,10 +98,63 @@ export function getCurrentUser(): MediaAuthor {
 
 export function saveCurrentUser(user: MediaAuthor) {
   localStorage.setItem(USER_KEY, JSON.stringify(user));
+  updateUserPresence(user);
 }
 
-// REST API and WebSocket connection
-let socket: WebSocket | null = null;
+// Google Authentication
+export async function signInWithGoogle(): Promise<User | null> {
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    if (result.user) {
+      const userAuthor: MediaAuthor = {
+        id: result.user.uid,
+        name: result.user.displayName || result.user.email?.split('@')[0] || 'Pengguna PUTREK',
+        avatar: '⭐',
+        color: '#10b981',
+      };
+      saveCurrentUser(userAuthor);
+      return result.user;
+    }
+  } catch (err) {
+    console.error('Google Auth Failed:', err);
+  }
+  return null;
+}
+
+export async function logoutUser(): Promise<void> {
+  try {
+    await signOut(auth);
+  } catch (err) {
+    console.error('Sign out error:', err);
+  }
+}
+
+export function subscribeToAuth(callback: (user: User | null) => void) {
+  return onAuthStateChanged(auth, callback);
+}
+
+// Online Presence Tracking in Firestore
+export async function updateUserPresence(author: MediaAuthor) {
+  try {
+    const userRef = doc(db, 'users', author.id);
+    await setDoc(
+      userRef,
+      {
+        id: author.id,
+        name: author.name,
+        avatar: author.avatar,
+        color: author.color,
+        lastActive: Date.now(),
+        device: typeof navigator !== 'undefined' && navigator.userAgent.includes('Mobile') ? 'Mobile' : 'Desktop',
+      },
+      { merge: true }
+    );
+  } catch (error) {
+    console.warn('Update user presence warning:', error);
+  }
+}
+
+// Real-time Firestore Subscriptions
 type SyncCallback = (data: {
   type: string;
   media?: MediaItem[];
@@ -51,98 +166,123 @@ type SyncCallback = (data: {
   users?: OnlineUser[];
 }) => void;
 
-const syncListeners = new Set<SyncCallback>();
-
 export function subscribeToCloudSync(callback: SyncCallback) {
-  syncListeners.add(callback);
+  let initialLoaded = false;
+
+  // 1. Media Realtime Listener
+  const mediaRef = collection(db, 'media');
+  const unsubMedia = onSnapshot(
+    mediaRef,
+    (snapshot) => {
+      const items: MediaItem[] = [];
+      snapshot.forEach((docSnap) => {
+        items.push(docSnap.data() as MediaItem);
+      });
+
+      // Sort newest first
+      items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+      callback({
+        type: 'init',
+        media: items,
+      });
+
+      // Auto-seed sample data if database is completely empty on boot
+      if (items.length === 0 && !initialLoaded) {
+        initialLoaded = true;
+        seedInitialSampleData().catch(console.error);
+      }
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'media');
+    }
+  );
+
+  // 2. Albums Realtime Listener
+  const albumsRef = collection(db, 'albums');
+  const unsubAlbums = onSnapshot(
+    albumsRef,
+    (snapshot) => {
+      const albumsList: Album[] = [];
+      snapshot.forEach((docSnap) => {
+        albumsList.push(docSnap.data() as Album);
+      });
+      callback({
+        type: 'init',
+        albums: albumsList,
+      });
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'albums');
+    }
+  );
+
+  // 3. Online Users Realtime Listener
+  const usersRef = collection(db, 'users');
+  const unsubUsers = onSnapshot(
+    usersRef,
+    (snapshot) => {
+      const usersList: OnlineUser[] = [];
+      snapshot.forEach((docSnap) => {
+        usersList.push(docSnap.data() as OnlineUser);
+      });
+      callback({
+        type: 'presence:update',
+        users: usersList,
+      });
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'users');
+    }
+  );
+
+  // Heartbeat presence update
+  const user = getCurrentUser();
+  updateUserPresence(user);
+  const interval = setInterval(() => {
+    updateUserPresence(getCurrentUser());
+  }, 30000);
+
   return () => {
-    syncListeners.delete(callback);
+    unsubMedia();
+    unsubAlbums();
+    unsubUsers();
+    clearInterval(interval);
   };
 }
 
 export function connectWebSocket(user: MediaAuthor) {
-  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
-    return;
-  }
-
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}`;
-
-  try {
-    socket = new WebSocket(wsUrl);
-
-    socket.onopen = () => {
-      socket?.send(
-        JSON.stringify({
-          type: 'user:join',
-          user: {
-            id: user.id,
-            name: user.name,
-            avatar: user.avatar,
-            color: user.color,
-            lastActive: Date.now(),
-            device: navigator.userAgent.includes('Mobile') ? 'Mobile' : 'Desktop',
-          },
-        })
-      );
-    };
-
-    socket.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        for (const listener of syncListeners) {
-          listener(msg);
-        }
-      } catch (err) {
-        console.error('WS message error:', err);
-      }
-    };
-
-    socket.onclose = () => {
-      // Reconnect after 3 seconds
-      setTimeout(() => {
-        connectWebSocket(user);
-      }, 3000);
-    };
-
-    socket.onerror = () => {
-      socket?.close();
-    };
-  } catch (err) {
-    console.error('WS connection error:', err);
-  }
+  // Maintained for backward compatibility; presence is tracked via Firestore Users Collection
+  updateUserPresence(user);
 }
 
-// Media API
+// Media API via Firestore
 export async function getAllMedia(): Promise<MediaItem[]> {
   try {
-    const res = await fetch('/api/media');
-    if (res.ok) {
-      return await res.json();
-    }
-  } catch (err) {
-    console.error('Fetch media failed, falling back:', err);
+    const snapshot = await getDocs(collection(db, 'media'));
+    const items: MediaItem[] = [];
+    snapshot.forEach((docSnap) => items.push(docSnap.data() as MediaItem));
+    return items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'media');
+    return [];
   }
-  return [];
 }
 
 export async function saveMediaBatch(items: MediaItem[]): Promise<void> {
   const currentUser = getCurrentUser();
-  const itemsWithAuthor = items.map((item) => ({
-    ...item,
-    author: item.author || currentUser,
-    likes: item.likes || [],
-    comments: item.comments || [],
-  }));
-
-  try {
-    await fetch('/api/media', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(itemsWithAuthor),
-    });
-  } catch (err) {
-    console.error('Save media batch failed:', err);
+  for (const item of items) {
+    const docItem: MediaItem = {
+      ...item,
+      author: item.author || currentUser,
+      likes: item.likes || [],
+      comments: item.comments || [],
+    };
+    try {
+      await setDoc(doc(db, 'media', docItem.id), docItem);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `media/${docItem.id}`);
+    }
   }
 }
 
@@ -152,65 +292,63 @@ export async function saveMediaItem(item: MediaItem): Promise<void> {
 
 export async function updateMediaItem(id: string, updates: Partial<MediaItem>): Promise<void> {
   try {
-    await fetch(`/api/media/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    });
-  } catch (err) {
-    console.error('Update media item failed:', err);
+    const itemRef = doc(db, 'media', id);
+    // Sanitize undefined fields
+    const sanitizedUpdates: Record<string, any> = {};
+    for (const [key, val] of Object.entries(updates)) {
+      if (val !== undefined) {
+        sanitizedUpdates[key] = val;
+      }
+    }
+    await updateDoc(itemRef, sanitizedUpdates);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `media/${id}`);
   }
 }
 
 export async function updateMediaBatch(ids: string[], updates: Partial<MediaItem>): Promise<void> {
-  try {
-    const res = await fetch('/api/media/batch-update', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids, updates }),
-    });
-    if (!res.ok) throw new Error('Batch update failed');
-  } catch (err) {
-    console.warn('Batch update API failed, falling back to sequential:', err);
-    for (const id of ids) {
-      await updateMediaItem(id, updates);
+  const sanitizedUpdates: Record<string, any> = {};
+  for (const [key, val] of Object.entries(updates)) {
+    if (val !== undefined) {
+      sanitizedUpdates[key] = val;
+    }
+  }
+  for (const id of ids) {
+    try {
+      await updateDoc(doc(db, 'media', id), sanitizedUpdates);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `media/${id}`);
     }
   }
 }
 
 export async function deleteMediaPermanent(id: string): Promise<void> {
   try {
-    await fetch(`/api/media/${id}`, {
-      method: 'DELETE',
-    });
-  } catch (err) {
-    console.error('Delete media failed:', err);
+    await deleteDoc(doc(db, 'media', id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `media/${id}`);
   }
 }
 
 export async function deleteMediaBatchPermanent(ids: string[]): Promise<void> {
-  try {
-    const res = await fetch('/api/media/batch-delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids }),
-    });
-    if (!res.ok) throw new Error('Batch delete failed');
-  } catch (err) {
-    console.warn('Batch delete API failed, falling back to sequential:', err);
-    for (const id of ids) {
-      await deleteMediaPermanent(id);
+  for (const id of ids) {
+    try {
+      await deleteDoc(doc(db, 'media', id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `media/${id}`);
     }
   }
 }
 
 export async function emptyTrash(): Promise<void> {
   try {
-    await fetch('/api/trash/empty', {
-      method: 'POST',
-    });
-  } catch (err) {
-    console.error('Empty trash failed:', err);
+    const all = await getAllMedia();
+    const trashed = all.filter((i) => i.isTrash);
+    for (const item of trashed) {
+      await deleteDoc(doc(db, 'media', item.id));
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, 'media/trash');
   }
 }
 
@@ -223,13 +361,20 @@ export function getRemainingTrashDays(trashedAt?: number): number {
 
 export async function toggleLikeMedia(id: string, userId: string): Promise<void> {
   try {
-    await fetch(`/api/media/${id}/like`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId }),
-    });
-  } catch (err) {
-    console.error('Toggle like failed:', err);
+    const docRef = doc(db, 'media', id);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const media = docSnap.data() as MediaItem;
+      let likes = media.likes || [];
+      if (likes.includes(userId)) {
+        likes = likes.filter((u) => u !== userId);
+      } else {
+        likes.push(userId);
+      }
+      await updateDoc(docRef, { likes });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `media/${id}/like`);
   }
 }
 
@@ -246,27 +391,29 @@ export async function addCommentMedia(id: string, text: string): Promise<void> {
   };
 
   try {
-    await fetch(`/api/media/${id}/comment`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(comment),
-    });
-  } catch (err) {
-    console.error('Add comment failed:', err);
+    const docRef = doc(db, 'media', id);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const media = docSnap.data() as MediaItem;
+      const comments = [...(media.comments || []), comment];
+      await updateDoc(docRef, { comments });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `media/${id}/comment`);
   }
 }
 
-// Album API
+// Album API via Firestore
 export async function getAllAlbums(): Promise<Album[]> {
   try {
-    const res = await fetch('/api/albums');
-    if (res.ok) {
-      return await res.json();
-    }
-  } catch (err) {
-    console.error('Fetch albums failed:', err);
+    const snapshot = await getDocs(collection(db, 'albums'));
+    const albums: Album[] = [];
+    snapshot.forEach((docSnap) => albums.push(docSnap.data() as Album));
+    return albums;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'albums');
+    return [];
   }
-  return [];
 }
 
 export async function saveAlbum(album: Album): Promise<void> {
@@ -276,27 +423,21 @@ export async function saveAlbum(album: Album): Promise<void> {
     createdBy: album.createdBy || user.name,
   };
   try {
-    await fetch('/api/albums', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(albumWithUser),
-    });
-  } catch (err) {
-    console.error('Save album failed:', err);
+    await setDoc(doc(db, 'albums', album.id), albumWithUser);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `albums/${album.id}`);
   }
 }
 
 export async function deleteAlbum(albumId: string): Promise<void> {
   try {
-    await fetch(`/api/albums/${albumId}`, {
-      method: 'DELETE',
-    });
-  } catch (err) {
-    console.error('Delete album failed:', err);
+    await deleteDoc(doc(db, 'albums', albumId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `albums/${albumId}`);
   }
 }
 
-// Storage stats calculation with 4TB capacity
+// Storage stats calculation with 1000TB capacity
 export function calculateStorageStats(media: MediaItem[]) {
   const usedBytes = media.reduce((acc, i) => acc + (i.size || 0), 0);
   const totalPhotos = media.filter((i) => i.type === 'image' && !i.isTrash).length;
@@ -308,12 +449,11 @@ export function calculateStorageStats(media: MediaItem[]) {
     usedBytes,
     totalPhotos,
     totalVideos,
-    percentage: Math.max(0.01, parseFloat(percentage.toFixed(4))),
+    percentage,
   };
 }
 
-// Helper: Convert File to Base64/DataUrl for network broadcast
-export function fileToDataUrl(file: File): Promise<string> {
+export async function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
@@ -394,16 +534,46 @@ export async function processFileToMedia(file: File, albumId = 'none'): Promise<
   };
 }
 
-// Pre-seed sample media into cloud server
+// Pre-seed sample media into Firestore
 export async function seedInitialSampleData(): Promise<void> {
-  const author = getCurrentUser();
+  const sampleAlbums: Album[] = [
+    {
+      id: 'album_liburan',
+      name: 'Liburan & Alam',
+      description: 'Dokumentasi wisata bersama dan pemandangan alam',
+      color: '#059669',
+      createdAt: Date.now() - 86400000 * 3,
+      createdBy: 'Sistem Cloud',
+    },
+    {
+      id: 'album_kuliner',
+      name: 'Kuliner & Kafe',
+      description: 'Foto kopi dan kuliner favorit',
+      color: '#d97706',
+      createdAt: Date.now() - 86400000 * 2,
+      createdBy: 'Sistem Cloud',
+    },
+    {
+      id: 'album_peliharaan',
+      name: 'Peliharaan Lucu',
+      description: 'Foto hewan peliharaan menggemaskan',
+      color: '#8b5cf6',
+      createdAt: Date.now() - 86400000 * 1,
+      createdBy: 'Sistem Cloud',
+    },
+  ];
+
+  for (const alb of sampleAlbums) {
+    await saveAlbum(alb);
+  }
+
   const sampleDefs = [
     {
       name: 'Foto_Kenangan_PUTREK.jpg',
       url: putrekCoupleBg,
       albumId: 'album_liburan',
       tags: ['PUTREK', 'Favorit', 'Kenangan', 'Romantis'],
-      caption: 'Momen kebersamaan ceria dan penuh cinta PUTREK tersimpan abadi di Cloud 4.0 TB.',
+      caption: 'Momen kebersamaan ceria dan penuh cinta PUTREK tersimpan abadi di Cloud 1000 TB.',
       width: 1920,
       height: 1080,
     },
@@ -446,6 +616,7 @@ export async function seedInitialSampleData(): Promise<void> {
   ];
 
   const items: MediaItem[] = [];
+  const author = getCurrentUser();
 
   for (let i = 0; i < sampleDefs.length; i++) {
     const def = sampleDefs[i];
@@ -462,27 +633,20 @@ export async function seedInitialSampleData(): Promise<void> {
       isTrash: false,
       isVault: false,
       caption: def.caption,
-      createdAt: Date.now() - (4 - i) * 3600000 * 6,
-      width: def.width,
-      height: def.height,
+      createdAt: Date.now() - (sampleDefs.length - i) * 3600000,
       rotation: 0,
       filter: 'normal',
-      author: {
-        id: 'system_admin',
-        name: 'Galeri Komunitas',
-        avatar: '🌟',
-        color: '#f59e0b',
-      },
-      likes: ['user_demo'],
+      author,
+      likes: [author.id],
       comments: [
         {
-          id: 'cmt_welcome',
-          userId: 'system_admin',
-          userName: 'Admin Galeri',
-          userAvatar: '🌟',
-          userColor: '#f59e0b',
-          text: 'Selamat datang di penyimpanan Cloud 4TB bersama! Unggah foto & video Anda agar tersinkronkan ke semua pengguna secara online.',
-          createdAt: Date.now() - 3600000,
+          id: 'cmt_seed_' + i,
+          userId: author.id,
+          userName: author.name,
+          userAvatar: author.avatar,
+          userColor: author.color,
+          text: 'Tersimpan otomatis di Firestore Realtime PUTREK Cloud 1000 TB! 🚀',
+          createdAt: Date.now(),
         },
       ],
     });
@@ -491,10 +655,9 @@ export async function seedInitialSampleData(): Promise<void> {
   await saveMediaBatch(items);
 }
 
-// Export All as ZIP
 export async function exportSelectedOrAllAsZip(
   items: MediaItem[],
-  zipFilename = 'SimpanMedia_4TB_Cadangan.zip',
+  zipFilename = 'PUTREK_Media_Cloud.zip',
   onProgress?: (percent: number, currentFile: string) => void
 ): Promise<void> {
   const zip = new JSZip();
@@ -502,66 +665,31 @@ export async function exportSelectedOrAllAsZip(
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     if (onProgress) {
-      onProgress(Math.round(((i + 1) / items.length) * 80), item.name);
+      onProgress(Math.round(((i + 1) / items.length) * 100), item.name);
     }
 
     try {
-      const res = await fetch(item.dataUrl);
-      const blob = await res.blob();
-      const safeName = `${item.id.slice(-6)}_${item.name.replace(/[/\\?%*:|"<>]/g, '_')}`;
-      zip.file(safeName, blob);
-    } catch {
-      // skip
+      if (item.dataUrl.startsWith('data:')) {
+        const parts = item.dataUrl.split(',');
+        const base64Data = parts[1];
+        zip.file(item.name, base64Data, { base64: true });
+      } else {
+        const response = await fetch(item.dataUrl);
+        const blob = await response.blob();
+        zip.file(item.name, blob);
+      }
+    } catch (err) {
+      console.warn(`Failed to add ${item.name} to zip:`, err);
     }
   }
 
-  const metadata = items.map((i) => ({
-    name: i.name,
-    type: i.type,
-    mimeType: i.mimeType,
-    size: i.size,
-    albumId: i.albumId,
-    tags: i.tags,
-    caption: i.caption,
-    author: i.author,
-    createdAt: i.createdAt,
-  }));
-  zip.file('katalog_cloud_4tb.json', JSON.stringify(metadata, null, 2));
-
-  if (onProgress) onProgress(90, 'Mengompres arsip ZIP...');
-
-  const zipBlob = await zip.generateAsync({
-    type: 'blob',
-    compression: 'DEFLATE',
-    compressionOptions: { level: 6 },
-  });
-
-  if (onProgress) onProgress(100, 'Selesai!');
-
-  const downloadUrl = URL.createObjectURL(zipBlob);
+  const content = await zip.generateAsync({ type: 'blob' });
+  const downloadUrl = URL.createObjectURL(content);
   const a = document.createElement('a');
   a.href = downloadUrl;
   a.download = zipFilename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
-}
-
-export function downloadSingleItem(item: MediaItem) {
-  const a = document.createElement('a');
-  a.href = item.dataUrl;
-  a.download = item.name;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-}
-
-export function formatBytes(bytes: number, decimals = 1): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  URL.revokeObjectURL(downloadUrl);
 }
